@@ -21,13 +21,15 @@ To start it later: the Desktop shortcut, or `FreeFlow.bat`.
 |---|---|
 | **Push-to-talk** | Click into any text field, **hold Ctrl+Win**, speak, release |
 | **Hands-free** | **Tap Ctrl+Win** once to lock the mic; tap again to finish and insert |
+| **Activation modes** | Settings → Activation: *Smart* (both, default), *Hold to talk* only, or *Press to toggle* |
 | **Command mode** | Select text anywhere, **hold Ctrl+Win+Alt**, say an instruction like *"make this friendlier"* or *"turn this into bullet points"* (needs an API key, see below) |
 | **Spoken commands** | Say *"new line"* or *"new paragraph"* while dictating |
 | **Snippets** | Say a trigger phrase (e.g. *"my email"*) and the stored text is typed |
 | **Pause / quit** | Right-click the tray icon |
 
-While recording, a small floating pill at the bottom of the screen shows live
-mic levels (can be turned off in Settings). Closing the dashboard window keeps
+While recording, a floating HUD at the bottom of the screen shows a live
+waveform **and a live transcript of what you're saying**; the final text is
+shown there as it's inserted. Both can be turned off in Settings. Closing the dashboard window keeps
 FreeFlow running in the tray.
 
 ## The dashboard

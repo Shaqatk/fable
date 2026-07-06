@@ -267,6 +267,13 @@
           <label class="field"><span>Microphone</span>
             <select id="set-mic"><option value="">System default</option></select>
           </label>
+          <label class="field"><span>Activation</span>
+            <select id="set-activation">
+              <option value="smart">Smart — hold to talk, quick tap locks hands-free</option>
+              <option value="hold">Hold to talk — recording only while held, release inserts</option>
+              <option value="toggle">Press to toggle — press to start, press again to insert</option>
+            </select>
+          </label>
           <label class="field"><span>Speech model (bigger = more accurate, slower)</span>
             <select id="set-model">
               <option value="tiny">Tiny — fastest</option>
@@ -306,6 +313,10 @@
         <div class="toggle-row">
           <div><div class="t-label">Show floating pill while recording</div><div class="t-hint">The little waveform at the bottom of your screen</div></div>
           <label class="switch"><input type="checkbox" id="set-overlay"><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="t-label">Live transcript in the pill</div><div class="t-hint">See what's being transcribed while you speak (uses extra CPU)</div></div>
+          <label class="switch"><input type="checkbox" id="set-preview"><span class="slider"></span></label>
         </div>
       </div>
 
@@ -431,7 +442,8 @@ async function rmSnip(i){ renderSnips(await api().remove_snippet(i)); }
 
 /* ---------- settings ---------- */
 const FIELDS = [
-  ["#set-hotkey","hotkey","value"], ["#set-model","model_size","value"],
+  ["#set-hotkey","hotkey","value"], ["#set-activation","activation_mode","value"],
+  ["#set-preview","live_preview","checked"], ["#set-model","model_size","value"],
   ["#set-language","language","value"], ["#set-provider","polish_provider","value"],
   ["#set-polish-model","polish_model","value"], ["#set-apikey","api_key","value"],
   ["#set-fillers","remove_fillers","checked"], ["#set-commands","spoken_commands","checked"],

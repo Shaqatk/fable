@@ -1,8 +1,12 @@
 """Orchestrates the dictation pipeline.
 
-hotkey down -> record + overlay
-hotkey up   -> transcribe (worker thread) -> textproc -> optional LLM polish
-            -> inject at cursor -> history + stats
+hotkey -> record (+ live transcript preview) -> transcribe -> textproc ->
+optional LLM polish -> inject at cursor -> history + stats.
+
+Activation modes (settings.activation_mode):
+  "hold"   — record only while the hotkey is held; release inserts.
+  "toggle" — press starts, press again stops and inserts.
+  "smart"  — hold behaves like "hold"; a quick tap locks hands-free (default).
 
 Command mode: copy selection, record spoken instruction, LLM rewrite, paste
 replacement over the selection.
@@ -14,13 +18,16 @@ import queue
 import threading
 import time
 
-from . import audio, inject, textproc
+from . import inject, textproc
 from .audio import Recorder, SAMPLE_RATE
 from .config import Settings
 from .history import History
 from .overlay import Overlay
 from .polish import Polisher
 from .transcribe import Transcriber
+
+PREVIEW_WINDOW_S = 14      # live preview transcribes at most the last N seconds
+PREVIEW_MIN_AUDIO_S = 0.7  # don't bother previewing before this much audio
 
 
 class Controller:
@@ -38,6 +45,8 @@ class Controller:
         self._command_selection = ""
         self._target_app: dict = {}
         self._record_started = 0.0
+        self._suppress_release = False  # toggle mode: ignore release after a press
+        self._model_ready = False
         self._jobs: queue.Queue = queue.Queue()
         self._worker = threading.Thread(target=self._work_loop, name="pipeline", daemon=True)
         self._worker.start()
@@ -47,6 +56,7 @@ class Controller:
     def _preload(self) -> None:
         try:
             self.transcriber.preload()
+            self._model_ready = True
             self.status_message = "Ready"
         except Exception as exc:
             self.status_message = f"Model load failed: {exc}"
@@ -61,20 +71,35 @@ class Controller:
 
     # -- hotkey callbacks (from hook thread) ---------------------------------
     def on_ptt_start(self) -> None:
+        mode = self.settings.get("activation_mode")
+        if mode == "toggle":
+            if self.recorder is not None:
+                self._suppress_release = True
+                self._finish_recording()
+            else:
+                self._suppress_release = False
+                self._begin_recording("dictate")
+            return
         if self.handsfree:
-            return  # already recording hands-free; the release handler decides
+            return  # smart mode: already recording; the release handler decides
         self._begin_recording("dictate")
 
     def on_ptt_stop(self, tap: bool) -> None:
+        mode = self.settings.get("activation_mode")
+        if mode == "toggle":
+            return  # everything happens on key-down in toggle mode
+        if mode == "hold":
+            self._finish_recording()
+            return
+        # smart (default): hold = PTT, quick tap = hands-free lock
         if self.handsfree:
-            # any press while hands-free is active stops it
             self.handsfree = False
             self._finish_recording()
             return
         if tap:
             self.handsfree = True
             self.overlay.show("handsfree")
-            return  # keep recording until the next tap
+            return
         self._finish_recording()
 
     def on_command_start(self) -> None:
@@ -100,15 +125,42 @@ class Controller:
         self._target_app = inject.get_foreground_app()
         self._record_started = time.monotonic()
         try:
-            self.recorder = Recorder(
+            recorder = Recorder(
                 device=self.settings.get("input_device"),
                 level_callback=self.overlay.set_level,
             )
-            self.recorder.start()
+            recorder.start()
+            self.recorder = recorder
             self.overlay.show("listening" if mode == "dictate" else "handsfree")
+            if mode == "dictate" and self.settings.get("live_preview"):
+                threading.Thread(
+                    target=self._preview_loop, args=(recorder,),
+                    name="preview", daemon=True,
+                ).start()
         except Exception as exc:
             self.recorder = None
             self.overlay.flash(f"Microphone error: {exc}", 3000)
+
+    def _preview_loop(self, recorder: Recorder) -> None:
+        """While `recorder` is live, periodically transcribe what we have so
+        far and stream it to the overlay. Whisper isn't a streaming model, so
+        this re-transcribes the (bounded) tail — the transcribe call itself
+        provides natural throttling on slower machines."""
+        if not self._model_ready:
+            return
+        time.sleep(0.8)
+        while self.recorder is recorder:
+            snap = recorder.snapshot()
+            if snap.size >= SAMPLE_RATE * PREVIEW_MIN_AUDIO_S:
+                tail = snap[-SAMPLE_RATE * PREVIEW_WINDOW_S:]
+                try:
+                    text, _ = self.transcriber.transcribe(tail)
+                except Exception:
+                    return
+                if self.recorder is recorder and text:
+                    prefix = "… " if snap.size > tail.size else ""
+                    self.overlay.set_partial(prefix + text)
+            time.sleep(0.25)
 
     def _finish_recording(self) -> None:
         if self.recorder is None:
@@ -139,9 +191,6 @@ class Controller:
                 self._process(mode, data, duration, app, selection)
             except Exception as exc:
                 self.overlay.flash(f"Error: {exc}", 3000)
-            finally:
-                if self._jobs.empty() and self.recorder is None:
-                    self.overlay.hide()
 
     def _process(self, mode, data, duration, app, selection) -> None:
         text, language = self.transcriber.transcribe(data)
@@ -155,6 +204,7 @@ class Controller:
             if not result:
                 self.overlay.flash("Command failed — text unchanged", 2500)
                 return
+            self.overlay.show_final(result)
             inject.insert_text(result)
             self.history.add(result, duration, app.get("exe", ""), language or "")
             return
@@ -169,5 +219,6 @@ class Controller:
 
         # Save first so nothing is lost even if injection fails.
         self.history.add(text, duration, app.get("exe", ""), language or "")
+        self.overlay.show_final(text)
         if not inject.insert_text(text):
             self.overlay.flash("Couldn't paste — text copied to clipboard", 3000)

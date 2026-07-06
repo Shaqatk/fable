@@ -38,7 +38,7 @@ class Recorder:
                 channels=1,
                 dtype="float32",
                 device=self.device,
-                blocksize=1600,  # 100 ms blocks -> smooth level updates
+                blocksize=800,  # 50 ms blocks -> fluid level updates
                 callback=self._on_block,
             )
             self._stream.start()
@@ -49,6 +49,13 @@ class Recorder:
         if self.level_callback is not None:
             rms = float(np.sqrt(np.mean(mono ** 2)))
             self.level_callback(min(1.0, rms * 12))  # scaled for display
+
+    def snapshot(self) -> np.ndarray:
+        """Copy of everything recorded so far (for live transcript preview)."""
+        chunks = list(self._chunks)  # callback only appends, so a copy is safe
+        if not chunks:
+            return np.zeros(0, dtype=np.float32)
+        return np.concatenate(chunks)
 
     def stop(self) -> np.ndarray:
         """Stop and return the recorded audio as one float32 array."""

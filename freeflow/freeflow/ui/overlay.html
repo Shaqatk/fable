@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root{
+    --blue:#0A84FF; --blue-soft:#5AC8FA; --green:#30D158; --red:#FF453A;
+    --ink:#F2F2F7; --ink-dim:#98989F; --ink-faint:#5c5c63;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:transparent;
+    font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;user-select:none;cursor:default}
+  #card{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    background:linear-gradient(180deg,#26262b 0%,#1a1a1f 55%,#151519 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.07), inset 0 0 0 1px rgba(255,255,255,.04);
+    padding:14px 20px 12px;
+  }
+
+  /* live transcript */
+  #text-zone{
+    flex:1;min-height:0;display:flex;align-items:flex-end;overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 26px);
+            mask-image:linear-gradient(180deg,transparent 0,#000 26px);
+    margin-bottom:8px;
+  }
+  #live-text{
+    width:100%;font-size:13.5px;line-height:1.5;color:var(--ink);
+    font-weight:450;letter-spacing:.01em;word-break:break-word;
+    transition:color .25s;
+  }
+  #live-text.placeholder{color:var(--ink-faint);font-style:italic;font-weight:400}
+  #live-text.dim{color:var(--ink-dim)}
+  #live-text.final{color:var(--ink);font-weight:500}
+
+  /* bottom row */
+  #wave-zone{display:flex;align-items:center;gap:12px;height:30px;flex-shrink:0}
+  #dot{width:8px;height:8px;border-radius:50%;background:var(--blue);flex-shrink:0;
+    box-shadow:0 0 8px 1px currentColor;color:var(--blue);
+    animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+  #wave{flex:1;height:30px;display:block}
+  #mode-label{
+    font-size:10.5px;color:var(--ink-faint);letter-spacing:.14em;
+    text-transform:uppercase;font-weight:600;flex-shrink:0;
+  }
+
+  /* processing spinner */
+  #spinner{
+    width:15px;height:15px;border-radius:50%;flex-shrink:0;display:none;
+    border:2.5px solid rgba(255,255,255,.14);border-top-color:var(--blue);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #check{display:none;color:var(--green);flex-shrink:0;font-size:15px;line-height:1}
+  #proc-label{display:none;font-size:12px;color:var(--ink-dim);font-weight:500}
+
+  body[data-state=handsfree] #dot{background:var(--green);color:var(--green)}
+  body[data-state=processing] #dot,
+  body[data-state=processing] #wave,
+  body[data-state=final] #dot, body[data-state=final] #wave,
+  body[data-state=flash] #dot, body[data-state=flash] #wave{display:none}
+  body[data-state=processing] #spinner,
+  body[data-state=processing] #proc-label{display:block}
+  body[data-state=final] #check{display:block}
+  body[data-state=final] #proc-label{display:block}
+  body[data-state=flash] #wave-zone{display:none}
+  body[data-state=flash] #text-zone{align-items:center;margin-bottom:0}
+</style>
+</head>
+<body data-state="listening">
+  <div id="card">
+    <div id="text-zone"><div id="live-text" class="placeholder">Listening…</div></div>
+    <div id="wave-zone">
+      <div id="dot"></div>
+      <div id="spinner"></div>
+      <div id="check">✓</div>
+      <canvas id="wave"></canvas>
+      <div id="proc-label">Transcribing…</div>
+      <div id="mode-label">rec</div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const canvas = document.getElementById("wave");
+  const ctx = canvas.getContext("2d");
+  const liveText = document.getElementById("live-text");
+  const modeLabel = document.getElementById("mode-label");
+  const procLabel = document.getElementById("proc-label");
+
+  const N = 46;                       // bars in the scrolling history
+  let hist = new Array(N).fill(0);    // target heights (0..1)
+  let drawn = new Array(N).fill(0);   // eased heights actually drawn
+  let level = 0;                      // latest mic level from python
+  let lastShift = 0;
+
+  function fit(){
+    const dpr = window.devicePixelRatio || 1;
+    const r = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, r.width * dpr);
+    canvas.height = Math.max(1, r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", fit);
+
+  function draw(ts){
+    requestAnimationFrame(draw);
+    const state = document.body.dataset.state;
+    if(state !== "listening" && state !== "handsfree") return;
+    if(!canvas.clientWidth) fit();
+
+    // scroll: push the current level into history every 42ms
+    if(ts - lastShift > 42){
+      lastShift = ts;
+      hist.push(Math.min(1, level));
+      hist.shift();
+    }
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    const gap = w / N, bw = Math.max(2.5, gap * 0.52), mid = h / 2;
+    const accent = state === "handsfree" ? "48,209,88" : "10,132,255";
+    for(let i = 0; i < N; i++){
+      drawn[i] += (hist[i] - drawn[i]) * 0.35;          // ease toward target
+      const bh = Math.max(2.5, drawn[i] * (h - 6));
+      const x = i * gap + (gap - bw) / 2;
+      const recent = i / N;                              // fade older bars
+      ctx.fillStyle = drawn[i] > 0.03
+        ? `rgba(${accent},${0.35 + 0.65 * recent})`
+        : "rgba(255,255,255,0.13)";
+      roundRect(x, mid - bh / 2, bw, bh, bw / 2);
+    }
+  }
+  function roundRect(x, y, w, h, r){
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+  }
+  requestAnimationFrame(draw);
+
+  window.ov = {
+    set(o){
+      document.body.dataset.state = o.state;
+      if(o.state === "listening" || o.state === "handsfree"){
+        modeLabel.textContent = o.state === "handsfree" ? "hands-free" : "rec";
+        if(!o.text){
+          liveText.className = "placeholder";
+          liveText.textContent = "Listening…";
+        }
+        fit();
+      } else if(o.state === "processing"){
+        procLabel.textContent = o.text || "Transcribing…";
+        liveText.classList.add("dim");
+      } else if(o.state === "final"){
+        procLabel.textContent = "Inserted";
+        liveText.className = "final";
+        liveText.textContent = o.text || "";
+      } else if(o.state === "flash"){
+        liveText.className = "";
+        liveText.textContent = o.text || "";
+      }
+    },
+    level(v){ level = v; },
+    partial(t){
+      if(!t) return;
+      liveText.className = "";
+      liveText.textContent = t;
+    },
+    reset(){
+      hist.fill(0); drawn.fill(0); level = 0;
+      liveText.className = "placeholder";
+      liveText.textContent = "Listening…";
+      liveText.classList.remove("dim");
+    },
+  };
+})();
+</script>
+</body>
+</html>

@@ -19,6 +19,13 @@ DEFAULTS: dict = {
     "command_hotkey": "ctrl+windows+alt",
     # Hold shorter than this (seconds) counts as a tap => hands-free toggle.
     "tap_threshold": 0.35,
+    # How the hotkey behaves:
+    #   "hold"   - record only while held; release inserts (walkie-talkie)
+    #   "toggle" - press starts, press again stops and inserts
+    #   "smart"  - hold = hold-to-talk, quick tap = toggle (both at once)
+    "activation_mode": "smart",
+    # Live transcript shown under the pill while speaking.
+    "live_preview": True,
     # Audio
     "input_device": None,          # None = system default microphone
     # Transcription

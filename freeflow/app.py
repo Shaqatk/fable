@@ -16,10 +16,12 @@ from freeflow.config import Settings
 from freeflow.controller import Controller
 from freeflow.history import History
 from freeflow.hotkeys import HotkeyManager
+from freeflow import overlay as overlay_mod
 from freeflow.overlay import Overlay
 from freeflow.tray import Tray
 
 UI_PATH = Path(__file__).parent / "freeflow" / "ui" / "index.html"
+OVERLAY_PATH = Path(__file__).parent / "freeflow" / "ui" / "overlay.html"
 
 
 def main() -> None:
@@ -43,6 +45,15 @@ def main() -> None:
         width=1080, height=760, min_size=(880, 620),
         background_color="#0e0e14",
     )
+
+    ox, oy = overlay_mod.screen_position()
+    overlay_window = webview.create_window(
+        overlay_mod.WINDOW_TITLE, str(OVERLAY_PATH),
+        width=overlay_mod.W, height=overlay_mod.H, x=ox, y=oy,
+        frameless=True, on_top=True, resizable=False, focus=False,
+        hidden=True, background_color="#1a1a1f",
+    )
+    overlay.attach(overlay_window)
 
     def show_window() -> None:
         try:
@@ -69,7 +80,7 @@ def main() -> None:
 
     window.events.closing += on_closing
 
-    webview.start()  # blocks on the GUI loop
+    webview.start(overlay.init_native)  # blocks on the GUI loop
     tray.icon.stop()
 
 
