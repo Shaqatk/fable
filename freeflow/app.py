@@ -6,6 +6,7 @@ Run with pythonw.exe for no console window, or python.exe for logs.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from freeflow.history import History
 from freeflow.hotkeys import HotkeyManager
 from freeflow import overlay as overlay_mod
 from freeflow.overlay import Overlay
+from freeflow import single_instance
 from freeflow.tray import Tray
 
 UI_PATH = Path(__file__).parent / "freeflow" / "ui" / "index.html"
@@ -25,6 +27,11 @@ OVERLAY_PATH = Path(__file__).parent / "freeflow" / "ui" / "overlay.html"
 
 
 def main() -> None:
+    if not single_instance.acquire_or_notify_show():
+        sys.exit(0)
+    if not single_instance.claim_primary():
+        sys.exit(0)
+
     settings = Settings()
     history = History()
     overlay = Overlay(enabled=bool(settings.get("show_overlay")))
@@ -62,13 +69,23 @@ def main() -> None:
         except Exception:
             pass
 
+    single_instance.register_show_handler(show_window)
+
     def quit_app() -> None:
         try:
             hotkeys.stop()
             controller.cancel()
-            window.destroy()
+            single_instance.release()
+            try:
+                window.destroy()
+            except Exception:
+                pass
+            try:
+                tray.icon.stop()
+            except Exception:
+                pass
         finally:
-            sys.exit(0)
+            os._exit(0)
 
     tray = Tray(settings, on_open=show_window, on_quit=quit_app)
     tray.run_detached()

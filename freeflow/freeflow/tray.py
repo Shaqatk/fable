@@ -43,7 +43,6 @@ class Tray:
         self.icon.icon = _make_icon(paused)
 
     def _quit(self, icon, item) -> None:
-        self.icon.stop()
         self.on_quit()
 
     def run_detached(self) -> None:
