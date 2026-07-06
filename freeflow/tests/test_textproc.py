@@ -38,6 +38,14 @@ def test_new_line_command():
     assert run("Item one, new line item two") == "Item one\nItem two"
 
 
+def test_bullet_point_command():
+    assert run("Item one, bullet point item two") == "Item one\n• Item two"
+
+
+def test_bullet_point_at_start():
+    assert run("Bullet point milk and eggs") == "• Milk and eggs"
+
+
 def test_dictionary_fixes_casing_whole_word():
     rules = [{"from": "jira", "to": "Jira"}]
     assert run("Update the jira ticket.", dictionary=rules) == "Update the Jira ticket."

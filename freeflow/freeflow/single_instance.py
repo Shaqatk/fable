@@ -1,43 +1,39 @@
 """Single-instance guard for FreeFlow on Windows.
 
-Uses a PID lock file plus a localhost socket. A second launch notifies the
-running instance to show its window. If the lock-file PID is alive but does
-not respond, the stale process is terminated so a fresh launch can proceed.
+Uses a named Windows mutex to guarantee a single process, plus a localhost
+socket so secondary launches can tell the primary instance to show its window.
 """
 
 from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes as wt
-import os
 import socket
 import threading
 import time
 from typing import Callable
 
-from freeflow.config import APP_DIR
-
 kernel32 = ctypes.windll.kernel32
-
-OpenProcess = kernel32.OpenProcess
-OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
-OpenProcess.restype = wt.HANDLE
-
-TerminateProcess = kernel32.TerminateProcess
-TerminateProcess.argtypes = [wt.HANDLE, wt.UINT]
-TerminateProcess.restype = wt.BOOL
 
 CloseHandle = kernel32.CloseHandle
 CloseHandle.argtypes = [wt.HANDLE]
 CloseHandle.restype = wt.BOOL
 
-PROCESS_TERMINATE = 0x0001
+CreateMutexW = kernel32.CreateMutexW
+CreateMutexW.argtypes = [wt.LPVOID, wt.BOOL, wt.LPCWSTR]
+CreateMutexW.restype = wt.HANDLE
 
-LOCK_PATH = APP_DIR / "instance.pid"
+GetLastError = kernel32.GetLastError
+GetLastError.argtypes = []
+GetLastError.restype = wt.DWORD
+
+ERROR_ALREADY_EXISTS = 183
+MUTEX_NAME = "Local\\FreeFlow_SingleInstance"
 HOST = "127.0.0.1"
 PORT = 52389
 SHOW_CMD = b"SHOW"
 
+_mutex: wt.HANDLE | None = None
 _server: socket.socket | None = None
 _show_callback: Callable[[], None] | None = None
 _pending_show = False
@@ -48,24 +44,15 @@ _stop = threading.Event()
 
 def acquire_or_notify_show() -> bool:
     """Return True if this process should start; False if another instance handled it."""
-    existing = _read_lock_pid()
-    if existing is not None and existing != os.getpid() and _pid_alive(existing):
-        if _notify_show(retries=10, delay=0.15):
-            return False
-        _terminate_pid(existing)
-        time.sleep(0.3)
-
-    _clear_stale_lock()
-    return True
+    if _acquire_mutex():
+        return True
+    _notify_show(retries=24, delay=0.15)
+    return False
 
 
 def claim_primary() -> bool:
-    """Bind the show socket and write the PID lock. Call once startup is underway."""
-    if not start_show_listener():
-        return False
-    APP_DIR.mkdir(parents=True, exist_ok=True)
-    LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
-    return True
+    """Bind the show socket for secondary-launch activation."""
+    return start_show_listener()
 
 
 def register_show_handler(on_show: Callable[[], None]) -> None:
@@ -85,6 +72,7 @@ def start_show_listener() -> bool:
             return _server is not None
         _listener_started = True
 
+    _stop.clear()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     for _ in range(12):
@@ -92,15 +80,7 @@ def start_show_listener() -> bool:
             sock.bind((HOST, PORT))
             break
         except OSError:
-            existing = _read_lock_pid()
-            if existing is not None and existing != os.getpid() and _pid_alive(existing):
-                if _notify_show(retries=3, delay=0.1):
-                    sock.close()
-                    return False
-                _terminate_pid(existing)
-                time.sleep(0.3)
-            else:
-                time.sleep(0.15)
+            time.sleep(0.15)
     else:
         sock.close()
         return False
@@ -115,8 +95,8 @@ def start_show_listener() -> bool:
 
 
 def release() -> None:
-    """Release the PID lock and close the listener socket during shutdown."""
-    global _server
+    """Release resources during shutdown."""
+    global _mutex, _server
 
     _stop.set()
     if _server is not None:
@@ -125,40 +105,9 @@ def release() -> None:
         except OSError:
             pass
         _server = None
-    _clear_stale_lock()
-
-
-def _read_lock_pid() -> int | None:
-    try:
-        return int(LOCK_PATH.read_text(encoding="utf-8").strip())
-    except (FileNotFoundError, ValueError, OSError):
-        return None
-
-
-def _clear_stale_lock() -> None:
-    try:
-        pid = _read_lock_pid()
-        if pid is None or pid == os.getpid() or not _pid_alive(pid):
-            LOCK_PATH.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-
-def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
-
-
-def _terminate_pid(pid: int) -> None:
-    handle = OpenProcess(PROCESS_TERMINATE, False, pid)
-    if handle:
-        TerminateProcess(handle, 0)
-        CloseHandle(handle)
+    if _mutex is not None:
+        CloseHandle(_mutex)
+        _mutex = None
 
 
 def _notify_show(retries: int = 8, delay: float = 0.15) -> bool:
@@ -170,6 +119,21 @@ def _notify_show(retries: int = 8, delay: float = 0.15) -> bool:
         except OSError:
             time.sleep(delay)
     return False
+
+
+def _acquire_mutex() -> bool:
+    """Try to acquire app-wide process ownership."""
+    global _mutex
+    if _mutex is not None:
+        return True
+    handle = CreateMutexW(None, False, MUTEX_NAME)
+    if not handle:
+        return False
+    if GetLastError() == ERROR_ALREADY_EXISTS:
+        CloseHandle(handle)
+        return False
+    _mutex = handle
+    return True
 
 
 def _dispatch_show() -> None:

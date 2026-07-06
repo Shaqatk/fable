@@ -21,9 +21,11 @@ from freeflow import overlay as overlay_mod
 from freeflow.overlay import Overlay
 from freeflow import single_instance
 from freeflow.tray import Tray
+from freeflow.winicon import apply_window_icon
 
 UI_PATH = Path(__file__).parent / "freeflow" / "ui" / "index.html"
 OVERLAY_PATH = Path(__file__).parent / "freeflow" / "ui" / "overlay.html"
+WINDOW_TITLE = "FreeFlow"
 
 
 def main() -> None:
@@ -48,7 +50,7 @@ def main() -> None:
 
     api = Api(settings, history, controller)
     window = webview.create_window(
-        "FreeFlow", str(UI_PATH), js_api=api,
+        WINDOW_TITLE, str(UI_PATH), js_api=api,
         width=1080, height=760, min_size=(880, 620),
         background_color="#0e0e14",
     )
@@ -97,7 +99,11 @@ def main() -> None:
 
     window.events.closing += on_closing
 
-    webview.start(overlay.init_native)  # blocks on the GUI loop
+    def init_native() -> None:
+        overlay.init_native()
+        apply_window_icon(WINDOW_TITLE)
+
+    webview.start(init_native)  # blocks on the GUI loop
     tray.icon.stop()
 
 

@@ -2,20 +2,31 @@
 
 from __future__ import annotations
 
-from PIL import Image, ImageDraw
+from pathlib import Path
+
+from PIL import Image, ImageEnhance
 import pystray
+
+ICON_PNG = Path(__file__).parent / "assets" / "mic.png"
+_TRAY_SIZE = 64
+_base_icon: Image.Image | None = None
+
+
+def _load_base_icon() -> Image.Image:
+    global _base_icon
+    if _base_icon is None:
+        img = Image.open(ICON_PNG).convert("RGBA")
+        _base_icon = img.resize((_TRAY_SIZE, _TRAY_SIZE), Image.Resampling.LANCZOS)
+    return _base_icon.copy()
 
 
 def _make_icon(paused: bool = False) -> Image.Image:
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    color = (122, 162, 247, 255) if not paused else (100, 100, 110, 255)
-    # simple microphone glyph
-    d.rounded_rectangle([24, 8, 40, 36], radius=8, fill=color)
-    d.arc([16, 20, 48, 48], start=0, end=180, fill=color, width=5)
-    d.line([32, 48, 32, 56], fill=color, width=5)
-    d.line([22, 56, 42, 56], fill=color, width=5)
-    return img
+    img = _load_base_icon()
+    if not paused:
+        return img
+
+    gray = ImageEnhance.Color(img).enhance(0.0)
+    return ImageEnhance.Brightness(gray).enhance(0.6)
 
 
 class Tray:
