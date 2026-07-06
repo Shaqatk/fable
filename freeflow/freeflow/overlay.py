@@ -31,10 +31,9 @@ WS_EX_TOPMOST = 0x00000008
 SW_HIDE = 0
 SW_SHOWNOACTIVATE = 4
 HWND_TOPMOST = -1
-SWP_NOMOVE = 0x0002
 SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
 SWP_NOACTIVATE = 0x0010
-SWP_SHOWWINDOW = 0x0040
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
 DWMWCP_ROUND = 2
 
@@ -74,11 +73,9 @@ class Overlay:
         self._hwnd = hwnd
         style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
         user32.SetWindowLongPtrW(
-            hwnd,
-            GWL_EXSTYLE,
-            style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+            hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST
         )
-        self._raise_topmost()
+        self._pin_topmost()
         try:
             pref = ctypes.c_int(DWMWCP_ROUND)
             ctypes.windll.dwmapi.DwmSetWindowAttribute(
@@ -130,26 +127,22 @@ class Overlay:
             self.hide()
 
     # -- internals -------------------------------------------------------------
-    def _raise_topmost(self) -> None:
+    def _set_visible(self, visible: bool) -> None:
+        if self._hwnd:
+            if visible:
+                user32.ShowWindow(self._hwnd, SW_SHOWNOACTIVATE)
+                self._pin_topmost()
+            else:
+                user32.ShowWindow(self._hwnd, SW_HIDE)
+
+    def _pin_topmost(self) -> None:
+        """Keep the overlay above normal windows without taking focus."""
         if not self._hwnd:
             return
         user32.SetWindowPos(
-            self._hwnd,
-            HWND_TOPMOST,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            self._hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
         )
-
-    def _set_visible(self, visible: bool) -> None:
-        if not self._hwnd:
-            return
-        if visible:
-            self._raise_topmost()
-        else:
-            user32.ShowWindow(self._hwnd, SW_HIDE)
 
     def _js(self, code: str) -> None:
         if self.window is None:
