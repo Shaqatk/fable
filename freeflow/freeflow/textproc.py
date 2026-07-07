@@ -23,7 +23,10 @@ _TIC_RE = re.compile(r",\s*(?:you know|like|I mean|sort of|kind of)\s*,", re.IGN
 # a preceding period belongs to the prior sentence and must be kept.
 _NEW_PARA_RE = re.compile(r"(?:,\s*)?\bnew paragraph\b[,.]?\s*", re.IGNORECASE)
 _NEW_LINE_RE = re.compile(r"(?:,\s*)?\bnew line\b[,.]?\s*", re.IGNORECASE)
-_BULLET_RE = re.compile(r"(?:,\s*)?\bbullet point\b[,.]?\s*", re.IGNORECASE)
+_BULLET_RE = re.compile(
+    r"(?:,\s*)?(?:(?:next|new|another)\s+bullet(?:\s+points?)?|bullet\s+points?)\b[,.]?\s*",
+    re.IGNORECASE,
+)
 
 _SENTENCE_START_RE = re.compile(r"(^|[.!?]\s+|\n)(•\s+)?([a-z])")
 

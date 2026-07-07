@@ -33,7 +33,7 @@ DEFAULTS: dict = {
     "language": "auto",            # "auto" or ISO code like "en", "es"
     # Text processing
     "remove_fillers": True,
-    "spoken_commands": True,       # "new line", "new paragraph", "bullet point"
+    "spoken_commands": True,       # "new line", "new paragraph", "bullet point(s)", "next bullet"
     "auto_capitalize": True,
     "dictionary": [],              # [{"from": "jira", "to": "Jira"}, ...] ("from" may equal "to" to just teach casing)
     "snippets": [],                # [{"trigger": "my email", "text": "sheharyarhaq@yahoo.com"}, ...]

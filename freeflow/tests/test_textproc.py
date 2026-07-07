@@ -46,6 +46,20 @@ def test_bullet_point_at_start():
     assert run("Bullet point milk and eggs") == "• Milk and eggs"
 
 
+def test_bullet_points_plural():
+    assert run("Bullet points milk and eggs") == "• Milk and eggs"
+
+
+def test_next_bullet_command():
+    assert run("Bullet point milk, next bullet eggs, new bullet bread") == (
+        "• Milk\n• Eggs\n• Bread"
+    )
+
+
+def test_new_line_unaffected_outside_bullets():
+    assert run("Item one, new line item two") == "Item one\nItem two"
+
+
 def test_dictionary_fixes_casing_whole_word():
     rules = [{"from": "jira", "to": "Jira"}]
     assert run("Update the jira ticket.", dictionary=rules) == "Update the Jira ticket."
